@@ -1,0 +1,5 @@
+gymnasium==1.0.0
+matplotlib==3.10.1
+numpy==2.2.3
+scipy==1.15.2
+wandb==0.19.7

@@ -111,9 +111,9 @@ plot = PlotTest()
 print(f"Testing: {env_sel['name']}")
 print(f"Model: {env_sel['model_name']}")
 
-test_max_episodes = 1
+test_max_episodes = 10
 for episode in range(test_max_episodes):
-    obs = env.reset(options={"Idref":0, "Iqref":100, "we": 200})   
+    obs = env.reset(options={"Idref":0, "Iqref":100})   
     controller.reset()
     (id, iq, idref, iqref) = sys_params_dict['i_max']*obs[0][0:4] # Denormalize [id, iq, idref, iqref]
     
@@ -121,7 +121,6 @@ for episode in range(test_max_episodes):
     reward_list = []
     state_list  = [obs[0][0:2] if env_name == "LoadRL" else obs[0][0:4]]
 
-    # plt.figure(episode, figsize=(30, 5))
     plt.figure(episode, figsize=(10, 6))
     done = False
     while not done:
