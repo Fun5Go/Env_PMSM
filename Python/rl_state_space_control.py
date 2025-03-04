@@ -115,7 +115,7 @@ test_max_episodes = 1
 for episode in range(test_max_episodes):
     obs = env.reset(options={"Idref":0, "Iqref":100, "we": 200})   
     controller.reset()
-    (id, iq, idref, iqref) = obs[0][0:4] # [id, iq, idref, iqref]
+    (id, iq, idref, iqref) = sys_params_dict['i_max']*obs[0][0:4] # Denormalize [id, iq, idref, iqref]
     
     action_list = []
     reward_list = []
@@ -127,6 +127,7 @@ for episode in range(test_max_episodes):
     while not done:
         action = np.array([controller.action_d(idref, id), controller.action_q(iqref, iq)])/(sys_params_dict["vdc"]/2)
         obs, rewards, done, truncated, info = env.step(action)
+        (id, iq, idref, iqref) = sys_params_dict['i_max']*obs[0:4] # Denormalize [id, iq, idref, iqref]
         done = done or truncated
         if not done:
             action_list.append(action[0])
