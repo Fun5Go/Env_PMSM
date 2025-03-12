@@ -30,19 +30,19 @@ class EnvLoadRL(gym.Env):
         self.ss_analysis = SSAnalysis()
 
         # State-space system representation
-        a = np.array([[-self.r / self.l]])
+        a = np.array([[-self.r / self.l]]) 
         b = np.array([[1 / self.l]])
         c = np.array([[1]])
         d = np.array([[0.]])
 
-        (ad, bd, _, _, _) = signal.cont2discrete((a, b, c, d), self.dt, method='zoh')
+        (ad, bd, _, _, _) = signal.cont2discrete((a, b, c, d), self.dt, method='zoh') # Continuous to discrete
 
         # s_(t+1) = ad * s(t) + bd * a(t)
         # where ad and bd are parameters, s(t) the state, and a(t) the action.
         # s(t) = current
         # a(t) = voltage
-        self.ad = ad[0][0]
-        self.bd = bd[0][0]
+        self.ad = ad[0][0] #dicrete a matrix
+        self.bd = bd[0][0] #dicrete b matrix
 
         # Limitations for the system
         # Action
@@ -79,7 +79,7 @@ class EnvLoadRL(gym.Env):
         )
 
     def step(self, action: np.ndarray):
-        action_clip = np.clip(action[0], -1,1)
+        action_clip = np.clip(action[0], -1,1) # Clip action to be within [-1,1]
         input_voltage = self.vdq_max * action_clip  # Denormalize action
 
         s_t = self.i
@@ -90,7 +90,7 @@ class EnvLoadRL(gym.Env):
 
         # Normalize observation space
         i_next_norm = i_next / self.i_max
-        i_ref_norm  = self.i_ref / self.i_max
+        i_ref_norm  = self.i_ref / self.i_max #Reference current from reset()
         prev_v_norm = self.prev_v / self.vdq_max
 
         # Observation: [current, reference, prev_v]
@@ -98,11 +98,12 @@ class EnvLoadRL(gym.Env):
 
         terminated = False
 
-        # Reward function
+        # Reward function 
         i_norm = self.i / self.i_max
-        e_i = np.power(i_norm - i_ref_norm, 2)
-        delta_v = np.power(action_clip - prev_v_norm, 2)
+        e_i = np.power(i_norm - i_ref_norm, 2) #Squared error
+        delta_v = np.power(action_clip - prev_v_norm, 2) #Squared delta voltage
 
+        # Different reward functions to handle different cases
         if self.reward_function == "quadratic":
             reward = -(e_i + 0.1 * delta_v)
         elif self.reward_function == "absolute":
@@ -123,7 +124,7 @@ class EnvLoadRL(gym.Env):
     def reset(self, *, seed = None, options = None):
         super().reset(seed=seed)
 
-        low, high = 0.9 * np.array([-1, 1])
+        low, high = 0.9 * np.array([-1, 1]) #Limits for random initialization
         # Initialization
         # [i]
         i_norm = np.round(self.np_random.uniform(low=low, high=high),5)
@@ -135,7 +136,7 @@ class EnvLoadRL(gym.Env):
         # self.ss_analysis.discrete(ad, bd, plot_current=True)     # Discrete
 
         # Store idq, and idq_ref
-        self.i     = self.i_max * i_norm
+        self.i     = self.i_max * i_norm 
         self.i_ref = self.i_max * i_ref_norm
 
         # Additional steps to store previous actions
