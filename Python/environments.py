@@ -357,7 +357,7 @@ class EnvPMSM(gym.Env):
         self.reward_function = sys_params["reward"]
 
         # Maximum voltage [V]
-        self.vdq_max = vdc/2
+        self.vdq_max = vdc/2 #? Through inverter (?)
 
         # Maximum current [A]
         self.i_max  = sys_params["i_max"]
@@ -398,7 +398,7 @@ class EnvPMSM(gym.Env):
 
         # Define action and observation space within a Box property
         self.action_space = spaces.Box(
-            low=self.low_actions, high=self.high_actions, shape=(2,), dtype=np.float32
+            low=self.low_actions, high=self.high_actions, shape=(2,), dtype=np.float32 #2 actions: Vd, Vq. action[0] = Vd, action[1] = Vq
         )
         self.observation_space = spaces.Box(
             low=self.low_observations, high=self.high_observations, shape=(7,), dtype=np.float32
@@ -408,13 +408,14 @@ class EnvPMSM(gym.Env):
         action_vdq = self.vdq_max * action  # Denormalize action
 
         # Calculate if that the module of Vdq is bigger than 1
-        norm_vdq = np.sqrt(np.power(action_vdq[0], 2) + np.power(action_vdq[0], 2))
+        norm_vdq = np.sqrt(np.power(action_vdq[0], 2) + np.power(action_vdq[1], 2)) #! L2 norm: Vdq = sqrt(Vd^2 + Vq^2)
         # factor_vdq = self.vdq_max / norm_vdq
         # factor_vdq = factor_vdq if factor_vdq < 1 else 1
-        factor_vdq = 1
+        # factor_vdq = 1
+        factor_vdq = self.vdq_max / norm_vdq if norm_vdq > self.vdq_max else 1 #？
 
         s_t = np.array([self.id,
-                        self.iq])
+                        self.iq]) 
         a_t = factor_vdq * action_vdq
 
         # s(t+1) = ad * s(t) + bd * a(t) + w
@@ -422,7 +423,7 @@ class EnvPMSM(gym.Env):
         # Rescale the current states to limit it within the boundaries if needed
         norm_idq_next = np.sqrt(np.power(id_next, 2) + np.power(iq_next, 2))
         factor_idq = self.i_max / norm_idq_next
-        factor_idq = factor_idq if factor_idq < 1 else 1
+        factor_idq = factor_idq if factor_idq < 1 else 1 # When the current is bigger than the limit, the current is limited to the maximum value
         id_next, iq_next = factor_idq * np.array([id_next, iq_next])
 
         # Normalize observation
@@ -432,8 +433,8 @@ class EnvPMSM(gym.Env):
         iq_ref_norm  = self.iq_ref / self.i_max
         we_norm      = self.we / self.we_nom
         prev_vd_norm = self.prev_vd / self.vdq_max
-        prev_vq_norm = self.prev_vd / self.vdq_max
-        # Observation: [id, iq, id_ref, iq_ref, we, prev_vd, prev_vq]
+        prev_vq_norm = self.prev_vq / self.vdq_max #! mistake?
+        # Observation: [id, iq, id_ref, iq_ref, we, prev_vd, prev_vq]， #? previous Vdq is used to prevent huge changes in the action in reward function
         obs = np.array([id_next_norm, iq_next_norm,  id_ref_norm, iq_ref_norm, we_norm, prev_vd_norm, prev_vq_norm], dtype=np.float32)
 
         terminated = False
@@ -443,7 +444,7 @@ class EnvPMSM(gym.Env):
         iq_norm = self.iq / self.i_max
         e_id = np.abs(id_norm - id_ref_norm)
         e_iq = np.abs(iq_norm - iq_ref_norm)
-        delta_vd = np.abs(action[0] - prev_vd_norm)
+        delta_vd = np.abs(action[0] - prev_vd_norm) 
         delta_vq = np.abs(action[1] - prev_vq_norm)
 
         if self.reward_function == "absolute":
@@ -475,9 +476,9 @@ class EnvPMSM(gym.Env):
     def reset(self, *, seed = None, options = None):
         super().reset(seed=seed)
 
-        low, high = 0.9 * np.array([-1, 1])
+        low, high = 0.9 * np.array([-1, 1]) # To avoid the initial state to be too close to the limits
         # Initialization
-        # [we]
+        # [we] #? If option has the we value, use it, otherwise, generate a random value
         try:
             we_norm = options["we"]/self.we_nom
         except:
@@ -485,10 +486,12 @@ class EnvPMSM(gym.Env):
         # Define denormalized speed value
         we = we_norm * self.we_nom
         # we_norm = 0.1
+
         # [id,iq]
         id_norm = np.round(self.np_random.uniform(low=low, high=high),5)
-        iq_lim  = np.sqrt(np.power(high,2)  - np.power(id_norm,2))
+        iq_lim  = np.sqrt(np.power(high,2)  - np.power(id_norm,2)) # To make sure that i_d^2 + i_q^2 ≤ high^2
         iq_norm = np.round(self.np_random.uniform(low=-iq_lim, high=iq_lim),5)
+
         # [id_ref, iq_ref]
         try:
             id_ref_norm = options["Idref"]/self.i_max
@@ -515,7 +518,7 @@ class EnvPMSM(gym.Env):
                       [-we * self.ld / self.lq,     -self.r / self.lq]])
         b = np.array([[1 / self.ld, 0],
                       [0, 1 / self.lq]])
-        w = np.array([[0], [-we * self.lambda_PM]])
+        w = np.array([[0], [-we * self.lambda_PM]]) 
         c = np.eye(2)
         d = np.zeros((2,2))
 
@@ -544,6 +547,7 @@ class EnvPMSM(gym.Env):
         self.we     = self.we_nom * we_norm
 
         # Additional steps to store previous actions
+        #? Pre implment the action to have previous Vdq
         n = 2
         self.prev_vd = 0
         self.prev_vq = 0
@@ -552,17 +556,50 @@ class EnvPMSM(gym.Env):
         return obs, {}
 
 if __name__ == "__main__":
-    # Environment
-    idq_max_norm = lambda vdq_max, we, r, l: vdq_max / np.sqrt(np.power(r, 2) + np.power(we * l, 2))
-    sys_params_dict = {"dt": 1 / 10e3,  # Sampling time [s]
-                       "r": 1,  # Resistance [Ohm]
-                       "l": 1e-2,  # Inductance [H]
-                       "vdc": 500,  # DC bus voltage [V]
-                       "we_nom": 200 * 2 * np.pi,  # Nominal speed [rad/s]
-                       }
+    # ======Load3RL Environment======
+    # idq_max_norm = lambda vdq_max, we, r, l: vdq_max / np.sqrt(np.power(r, 2) + np.power(we * l, 2))
+    # sys_params_dict = {"dt": 1 / 10e3,  # Sampling time [s]
+    #                    "r": 1,  # Resistance [Ohm]
+    #                    "l": 1e-2,  # Inductance [H]
+    #                    "vdc": 500,  # DC bus voltage [V]
+    #                    "we_nom": 200 * 2 * np.pi,  # Nominal speed [rad/s]
+    #                     "reward": "quadratic"
+    #                    }
+    # # Maximum current [A]
+    # sys_params_dict["i_max"] = idq_max_norm(sys_params_dict["vdc"] / 2, sys_params_dict["we_nom"],
+    #                                         sys_params_dict["r"], sys_params_dict["l"])
+    # env_test = EnvLoad3RL(sys_params=sys_params_dict)
+    # obs_test, _ = env_test.reset()
+    # env_test.step(action=env_test.action_space.sample())
+
+    # ======PMSM Environment======
+    sys_params_dict = {
+    "dt": 1 / 10e3,          # Sampling time [s]
+    "r": 29.08e-3,           # Resistance [Ohm]
+    "ld": 0.91e-3,           # D-axis Inductance [H]
+    "lq": 1.17e-3,           # Q-axis Inductance [H]
+    "lambda_PM": 0.1723,     # Flux-linkage due to permanent magnets [Wb]
+    "vdc": 1200,             # DC bus voltage [V]
+    "we_nom": 200 * 2 * np.pi,  # Nominal speed [rad/s]
+    "reward": "quadratic"
+    }
     # Maximum current [A]
-    sys_params_dict["i_max"] = idq_max_norm(sys_params_dict["vdc"] / 2, sys_params_dict["we_nom"],
-                                            sys_params_dict["r"], sys_params_dict["l"])
-    env_test = EnvLoad3RL(sys_params=sys_params_dict)
-    obs_test, _ = env_test.reset()
-    env_test.step(action=env_test.action_space.sample())
+     # i_max = V_max / sqrt(R^2 + (ω_nom * L_d)^2)
+    idq_max_norm = lambda vdq_max, we, r, l: vdq_max / np.sqrt(np.power(r, 2) + np.power(we * l, 2))
+    sys_params_dict["i_max"] = idq_max_norm(
+            sys_params_dict["vdc"] / 2, # DC through inverter(?)
+            sys_params_dict["we_nom"],
+            sys_params_dict["r"],
+            sys_params_dict["ld"]  
+        )
+    env_test = EnvPMSM(sys_params=sys_params_dict)
+    obs_test, _ = env_test.reset(options={"Idref": 0, "Iqref": 100})  # 设定参考电流
+    print("Initial Observation:", obs_test)
+
+    # 随机采样一个动作并执行
+    action = env_test.action_space.sample()  # 采样随机动作
+    next_obs, reward, done, _, _ = env_test.step(action)
+
+    print("Next Observation:", next_obs)
+    print("Reward:", reward)
+    print("Done:", done)
